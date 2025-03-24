@@ -35,7 +35,7 @@ pub fn interpolate(shares: &[Share]) -> Vec<u8> {
 pub fn random_polynomial<R: rand::Rng>(s: GF256, k: u8, rng: &mut R) -> Vec<GF256> {
     let k = k as usize;
     let mut poly = Vec::with_capacity(k);
-    let between = Uniform::new_inclusive(1, 255);
+    let between = Uniform::new_inclusive(0, 255);
 
     for _ in 1..k {
         poly.push(GF256(between.sample(rng)));
