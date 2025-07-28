@@ -1,5 +1,5 @@
 use alloc::vec::Vec;
-
+use std::ops::Add;
 use super::field::GF256;
 
 #[cfg(feature = "fuzzing")]
@@ -7,6 +7,7 @@ use arbitrary::Arbitrary;
 
 #[cfg(feature = "zeroize_memory")]
 use zeroize::Zeroize;
+use crate::math;
 
 /// A share used to reconstruct the secret. Can be serialized to and from a byte array.
 ///
@@ -39,6 +40,63 @@ use zeroize::Zeroize;
 pub struct Share {
     pub x: GF256,
     pub y: Vec<GF256>,
+}
+
+impl Share {
+
+    /// Renews a specific share based on the protocol proposed by Amir Herzberg’s in 1995 paper, 
+    /// "Proactive Secret Sharing Or: How to Cope With Perpetual Leakage." 
+    /// Example:
+    /// ```
+    /// # use sharks::{ Sharks, Share };
+    /// # let sharks = Sharks(2);
+    /// // Obtain an iterator over the shares for secret "a_secret"
+    /// let dealer = sharks.dealer(b"a_secret");
+    /// // Get 2 shares
+    /// let mut shares: Vec<Share> = dealer.take(2).collect();
+    /// let (shares_player1, shares_player2) = shares.split_at_mut(1);
+    /// let share_player1 = & mut shares_player1[0];
+    /// let share_player2 = & mut shares_player2[0];
+    /// let proactive_player1 = sharks.proactive_dealer(share_player1);
+    /// let renewal_shares_player1: Vec<Share> = proactive_player1.take(2).collect();
+    ///  // Usually at this step, player1 should send the corresponding renewal share
+    ///  // renewal_shares_player1[1] to player 2
+    /// let proactive_player2 = sharks.proactive_dealer(share_player2);
+    /// let renewal_shares_player2: Vec<Share> = proactive_player2.take(2).collect();
+    ///  // Usually at this step, player2 should send the corresponding renewal share
+    ///  // renewal_shares_player2[0] to player 1
+    /// let player1_renewal = share_player1.renew([&renewal_shares_player1[0],&renewal_shares_player2[0]]);
+    /// let player2_renewal = share_player2.renew([&renewal_shares_player2[1],&renewal_shares_player1[1]]);
+    ///  // Each player correctly updated its share with the corresponding information
+    /// assert!(player1_renewal.is_ok());
+    /// assert!(player2_renewal.is_ok());
+    /// 
+    /// let mut secret = sharks.recover(&shares);
+    /// // Secret is still correctly recovered
+    /// assert!(secret.is_ok());
+    /// assert_eq!(b"a_secret", secret.unwrap().as_slice());
+    #[cfg(feature = "proactive")]
+    pub fn renew<'a, T>(& mut self, renewal_shares: T) -> Result<(), &'a str>
+    where
+        T: IntoIterator<Item = &'a Share>,
+        T::IntoIter: Iterator<Item = &'a Share>,
+    {
+        let share_length = self.y.len();
+
+        for renewal_share in renewal_shares.into_iter() {
+            if renewal_share.y.len() != share_length {
+                return Err("All shares must have the same length");
+            }
+            else if renewal_share.x != self.x {
+                return Err("Invalid renewal share supplied");
+            } else {
+                self.y.iter_mut()
+                    .zip(renewal_share.y.iter())
+                    .for_each(|(y,others_y)| *y = y.clone().add(others_y.clone()));
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Obtains a byte vector from a `Share` instance

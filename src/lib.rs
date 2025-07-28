@@ -166,6 +166,34 @@ impl Sharks {
             Ok(math::interpolate(values.as_slice()))
         }
     }
+
+    /// Given a share, returns an `Iterator` along new shares that are for specific use of Proactive
+    /// Protection. These shares are all evaluations of random polynomials with constant term zero 
+    /// based on the protocol proposed by Amir Herzberg’s in 1995 paper, 
+    /// "Proactive Secret Sharing Or: How to Cope With Perpetual Leakage." 
+    /// Example:
+    /// ```
+    /// # use sharks::{ Sharks, Share };
+    /// # let sharks = Sharks(2);
+    /// // Obtain an iterator over the shares for secret "a_secret"
+    /// let dealer = sharks.dealer(b"a_secret");
+    /// // Get 2 shares for 2 players
+    /// let shares: Vec<Share> = dealer.take(2).collect();
+    /// let share_player1 = &shares[0];
+    ///  // Get renewal shares for player 1
+    /// let proactive_player1 = sharks.proactive_dealer(share_player1);
+    /// let renewals_shares_player1: Vec<Share> = proactive_player1.take(2).collect();
+    #[cfg(feature = "std")]
+    pub fn proactive_dealer(&self, share: &Share) -> impl Iterator<Item = Share> {
+        let mut rng = rand::thread_rng();
+        let mut polys = Vec::with_capacity(share.y.len());
+
+        for _ in 0..share.y.len() {
+            polys.push(math::random_polynomial(GF256(0), self.0, & mut rng))
+        }
+        math::get_evaluator(polys)
+    }
+    
 }
 
 #[cfg(test)]
