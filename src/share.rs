@@ -1,6 +1,4 @@
 use alloc::vec::Vec;
-#[cfg(feature = "proactive")]
-use core::ops::Add;
 use super::field::GF256;
 
 #[cfg(feature = "fuzzing")]
@@ -80,10 +78,9 @@ impl Share {
     /// assert!(secret.is_ok());
     /// assert_eq!(b"a_secret", secret.unwrap().as_slice());
     #[cfg(feature = "proactive")]
-    pub fn renew<'a, T>(& mut self, renewal_shares: T) -> Result<(), &'a str>
+    pub fn renew<'a, T>(& mut self, renewal_shares: T) -> Result<(), &str>
     where
         T: IntoIterator<Item = &'a Share>,
-        T::IntoIter: Iterator<Item = &'a Share>,
     {
         let share_length = self.y.len();
 
@@ -94,9 +91,9 @@ impl Share {
             else if renewal_share.x != self.x {
                 return Err("Invalid renewal share supplied");
             } else {
-                self.y.iter_mut()
-                    .zip(renewal_share.y.iter())
-                    .for_each(|(y,others_y)| *y = y.clone().add(others_y.clone()));
+                for (y, other_y) in self.y.iter_mut().zip(renewal_share.y.iter()) {
+                    y.0 ^= other_y.0;
+                }
             }
         }
         Ok(())
