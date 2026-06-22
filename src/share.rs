@@ -7,7 +7,6 @@ use arbitrary::Arbitrary;
 
 #[cfg(feature = "zeroize_memory")]
 use zeroize::Zeroize;
-use crate::math;
 
 /// A share used to reconstruct the secret. Can be serialized to and from a byte array.
 ///
