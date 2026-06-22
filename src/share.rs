@@ -147,4 +147,90 @@ mod tests {
         assert_eq!(share.x, GF256(1));
         assert_eq!(share.y, vec![GF256(2), GF256(3)]);
     }
+
+    #[cfg(feature = "proactive")]
+    #[test]
+    fn renew_works() {
+        let mut share = Share {
+            x: GF256(1),
+            y: vec![GF256(10), GF256(20)],
+        };
+        let original_y = share.y.clone();
+        let renewal = Share {
+            x: GF256(1),
+            y: vec![GF256(5), GF256(7)],
+        };
+        let result = share.renew([&renewal]);
+        assert!(result.is_ok());
+        // In GF256, addition is XOR: 10 ^ 5 = 15, 20 ^ 7 = 19
+        assert_eq!(share.y[0], GF256(original_y[0].0 ^ 5));
+        assert_eq!(share.y[1], GF256(original_y[1].0 ^ 7));
+    }
+
+    #[cfg(feature = "proactive")]
+    #[test]
+    fn renew_multiple_renewal_shares_works() {
+        let mut share = Share {
+            x: GF256(3),
+            y: vec![GF256(100)],
+        };
+        let renewal1 = Share {
+            x: GF256(3),
+            y: vec![GF256(25)],
+        };
+        let renewal2 = Share {
+            x: GF256(3),
+            y: vec![GF256(50)],
+        };
+        let result = share.renew([&renewal1, &renewal2]);
+        assert!(result.is_ok());
+        // GF256 addition is XOR: 100 ^ 25 ^ 50
+        assert_eq!(share.y[0], GF256(100 ^ 25 ^ 50));
+    }
+
+    #[cfg(feature = "proactive")]
+    #[test]
+    fn renew_mismatched_length_err() {
+        let mut share = Share {
+            x: GF256(1),
+            y: vec![GF256(10), GF256(20)],
+        };
+        let renewal = Share {
+            x: GF256(1),
+            y: vec![GF256(5)],
+        };
+        let result = share.renew([&renewal]);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "All shares must have the same length");
+    }
+
+    #[cfg(feature = "proactive")]
+    #[test]
+    fn renew_mismatched_x_err() {
+        let mut share = Share {
+            x: GF256(1),
+            y: vec![GF256(10), GF256(20)],
+        };
+        let renewal = Share {
+            x: GF256(2),
+            y: vec![GF256(5), GF256(7)],
+        };
+        let result = share.renew([&renewal]);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Invalid renewal share supplied");
+    }
+
+    #[cfg(feature = "proactive")]
+    #[test]
+    fn renew_empty_renewal_shares_is_noop() {
+        let mut share = Share {
+            x: GF256(1),
+            y: vec![GF256(10), GF256(20)],
+        };
+        let original_y = share.y.clone();
+        let empty: Vec<&Share> = vec![];
+        let result = share.renew(empty);
+        assert!(result.is_ok());
+        assert_eq!(share.y, original_y);
+    }
 }
