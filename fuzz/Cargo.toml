@@ -36,3 +36,15 @@ path = "fuzz_targets/generate_shares.rs"
 [[bin]]
 name = "recover"
 path = "fuzz_targets/recover.rs"
+
+[[bin]]
+name = "renew_share"
+path = "fuzz_targets/renew_share.rs"
+
+[[bin]]
+name = "proactive_dealer"
+path = "fuzz_targets/proactive_dealer.rs"
+
+[[bin]]
+name = "proactive_renewal"
+path = "fuzz_targets/proactive_renewal.rs"
