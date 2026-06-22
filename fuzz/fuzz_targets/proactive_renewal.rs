@@ -35,8 +35,6 @@ fuzz_target!(|params: Parameters| {
     }
 
     // The original secret must still be recoverable after renewal
-    let recovered = sharks.recover(&shares);
-    if let Ok(secret) = recovered {
-        assert_eq!(secret, params.secret);
-    }
+    let recovered = sharks.recover(&shares).unwrap();
+    assert_eq!(recovered, params.secret);
 });
