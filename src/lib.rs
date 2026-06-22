@@ -167,10 +167,10 @@ impl Sharks {
         }
     }
 
-    /// Given a share, returns an `Iterator` along new shares that are for specific use of Proactive
-    /// Protection. These shares are all evaluations of random polynomials with constant term zero 
-    /// based on the protocol proposed by Amir Herzberg’s in 1995 paper, 
-    /// "Proactive Secret Sharing Or: How to Cope With Perpetual Leakage." 
+    /// Given a share, returns an `Iterator` over new shares for proactive protection.
+    /// These shares are evaluations of random polynomials with constant term zero
+    /// based on the protocol proposed by Herzberg et al. in their 1995 paper,
+    /// "Proactive Secret Sharing Or: How to Cope With Perpetual Leakage."
     /// Example:
     /// ```
     /// # use sharks::{ Sharks, Share };
