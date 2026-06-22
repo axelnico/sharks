@@ -1,5 +1,6 @@
 use alloc::vec::Vec;
-use std::ops::Add;
+#[cfg(feature = "proactive")]
+use core::ops::Add;
 use super::field::GF256;
 
 #[cfg(feature = "fuzzing")]
@@ -48,19 +49,23 @@ impl Share {
     /// Example:
     /// ```
     /// # use sharks::{ Sharks, Share };
+    /// # use rand_chacha::rand_core::SeedableRng;
     /// # let sharks = Sharks(2);
     /// // Obtain an iterator over the shares for secret "a_secret"
-    /// let dealer = sharks.dealer(b"a_secret");
+    /// let mut rng = rand_chacha::ChaCha8Rng::from_seed([0x90; 32]);
+    /// let dealer = sharks.dealer_rng(b"a_secret", &mut rng);
     /// // Get 2 shares
     /// let mut shares: Vec<Share> = dealer.take(2).collect();
     /// let (shares_player1, shares_player2) = shares.split_at_mut(1);
     /// let share_player1 = & mut shares_player1[0];
     /// let share_player2 = & mut shares_player2[0];
-    /// let proactive_player1 = sharks.proactive_dealer(share_player1);
+    /// let mut rng = rand_chacha::ChaCha8Rng::from_seed([0x90; 32]);
+    /// let proactive_player1 = sharks.proactive_dealer_rng(share_player1, &mut rng);
     /// let renewal_shares_player1: Vec<Share> = proactive_player1.take(2).collect();
     ///  // Usually at this step, player1 should send the corresponding renewal share
     ///  // renewal_shares_player1[1] to player 2
-    /// let proactive_player2 = sharks.proactive_dealer(share_player2);
+    /// let mut rng = rand_chacha::ChaCha8Rng::from_seed([0x91; 32]);
+    /// let proactive_player2 = sharks.proactive_dealer_rng(share_player2, &mut rng);
     /// let renewal_shares_player2: Vec<Share> = proactive_player2.take(2).collect();
     ///  // Usually at this step, player2 should send the corresponding renewal share
     ///  // renewal_shares_player2[0] to player 1

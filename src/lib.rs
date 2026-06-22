@@ -167,8 +167,46 @@ impl Sharks {
         }
     }
 
-    /// Given a share, returns an `Iterator` over new shares for proactive protection.
-    /// These shares are evaluations of random polynomials with constant term zero
+    /// This method is useful when `std` is not available. For typical usage
+    /// see the `proactive_dealer` method.
+    ///
+    /// Given a share, returns an `Iterator` along new shares that are for specific use of Proactive
+    /// Protection. These shares are all evaluations of random polynomials with constant term zero
+    /// based on the protocol proposed by Herzberg et al. in their 1995 paper,
+    /// "Proactive Secret Sharing Or: How to Cope With Perpetual Leakage."
+    /// A random number generator has to be provided.
+    ///
+    /// Example:
+    /// ```
+    /// # use sharks::{ Sharks, Share };
+    /// # use rand_chacha::rand_core::SeedableRng;
+    /// # let sharks = Sharks(2);
+    /// // Obtain an iterator over the shares for secret "a_secret"
+    /// let mut rng = rand_chacha::ChaCha8Rng::from_seed([0x90; 32]);
+    /// let dealer = sharks.dealer_rng(b"a_secret", &mut rng);
+    /// // Get 2 shares for 2 players
+    /// let shares: Vec<Share> = dealer.take(2).collect();
+    /// let share_player1 = &shares[0];
+    ///  // Get renewal shares for player 1
+    /// let mut rng = rand_chacha::ChaCha8Rng::from_seed([0x90; 32]);
+    /// let proactive_player1 = sharks.proactive_dealer_rng(share_player1, &mut rng);
+    /// let renewals_shares_player1: Vec<Share> = proactive_player1.take(2).collect();
+    #[cfg(feature = "proactive")]
+    pub fn proactive_dealer_rng<R: rand::Rng>(
+        &self,
+        share: &Share,
+        rng: &mut R,
+    ) -> impl Iterator<Item = Share> {
+        let mut polys = Vec::with_capacity(share.y.len());
+
+        for _ in 0..share.y.len() {
+            polys.push(math::random_polynomial(GF256(0), self.0, rng))
+        }
+        math::get_evaluator(polys)
+    }
+
+    /// Given a share, returns an `Iterator` along new shares that are for specific use of Proactive
+    /// Protection. These shares are all evaluations of random polynomials with constant term zero
     /// based on the protocol proposed by Herzberg et al. in their 1995 paper,
     /// "Proactive Secret Sharing Or: How to Cope With Perpetual Leakage."
     /// Example:
@@ -183,15 +221,10 @@ impl Sharks {
     ///  // Get renewal shares for player 1
     /// let proactive_player1 = sharks.proactive_dealer(share_player1);
     /// let renewals_shares_player1: Vec<Share> = proactive_player1.take(2).collect();
-    #[cfg(feature = "std")]
+    #[cfg(all(feature = "proactive", feature = "std"))]
     pub fn proactive_dealer(&self, share: &Share) -> impl Iterator<Item = Share> {
         let mut rng = rand::thread_rng();
-        let mut polys = Vec::with_capacity(share.y.len());
-
-        for _ in 0..share.y.len() {
-            polys.push(math::random_polynomial(GF256(0), self.0, & mut rng))
-        }
-        math::get_evaluator(polys)
+        self.proactive_dealer_rng(share, &mut rng)
     }
     
 }
@@ -213,6 +246,19 @@ mod tests {
         #[cfg(feature = "std")]
         fn make_shares(&self, secret: &[u8]) -> impl Iterator<Item=Share> {
             self.dealer(secret)
+        }
+
+        #[cfg(all(feature = "proactive", not(feature = "std")))]
+        fn make_proactive_shares(&self, share: &Share) -> impl Iterator<Item = Share> {
+            use rand_chacha::{rand_core::SeedableRng, ChaCha8Rng};
+
+            let mut rng = ChaCha8Rng::from_seed([0x90; 32]);
+            self.proactive_dealer_rng(share, &mut rng)
+        }
+
+        #[cfg(all(feature = "proactive", feature = "std"))]
+        fn make_proactive_shares(&self, share: &Share) -> impl Iterator<Item = Share> {
+            self.proactive_dealer(share)
         }
 
         #[cfg(feature = "proactive")]
@@ -258,7 +304,7 @@ mod tests {
     fn test_proactive_dealer_generates_shares() {
         let sharks = Sharks(3);
         let shares: Vec<Share> = sharks.make_shares(b"secret").take(3).collect();
-        let renewal_shares: Vec<Share> = sharks.proactive_dealer(&shares[0]).take(3).collect();
+        let renewal_shares: Vec<Share> = sharks.make_proactive_shares(&shares[0]).take(3).collect();
         assert_eq!(renewal_shares.len(), 3);
         // Each renewal share y length must match the original share y length
         for rs in &renewal_shares {
@@ -271,7 +317,7 @@ mod tests {
     fn test_proactive_dealer_x_values_are_sequential() {
         let sharks = Sharks(2);
         let shares: Vec<Share> = sharks.make_shares(b"test").take(2).collect();
-        let renewal_shares: Vec<Share> = sharks.proactive_dealer(&shares[0]).take(5).collect();
+        let renewal_shares: Vec<Share> = sharks.make_proactive_shares(&shares[0]).take(5).collect();
         // The evaluator produces x values starting at 1 and incrementing
         for (i, rs) in renewal_shares.iter().enumerate() {
             assert_eq!(rs.x, super::field::GF256((i + 1) as u8));
@@ -290,8 +336,8 @@ mod tests {
         let share_player1 = &mut shares_player1[0];
         let share_player2 = &mut shares_player2[0];
 
-        let renewal_from_p1: Vec<Share> = sharks.proactive_dealer(share_player1).take(2).collect();
-        let renewal_from_p2: Vec<Share> = sharks.proactive_dealer(share_player2).take(2).collect();
+        let renewal_from_p1: Vec<Share> = sharks.make_proactive_shares(share_player1).take(2).collect();
+        let renewal_from_p2: Vec<Share> = sharks.make_proactive_shares(share_player2).take(2).collect();
 
         // Player 1 applies its own renewal share and player 2's renewal share for player 1
         let result1 = share_player1.renew([&renewal_from_p1[0], &renewal_from_p2[0]]);
@@ -316,7 +362,7 @@ mod tests {
         // Each player generates renewal shares for all 3 players
         let renewals: Vec<Vec<Share>> = shares
             .iter()
-            .map(|s| sharks.proactive_dealer(s).take(3).collect())
+            .map(|s| sharks.make_proactive_shares(s).take(3).collect())
             .collect();
 
         // Each player applies renewal shares from all players at their index
@@ -344,8 +390,8 @@ mod tests {
             let sp1 = &mut shares_p1[0];
             let sp2 = &mut shares_p2[0];
 
-            let renewal_from_p1: Vec<Share> = sharks.proactive_dealer(sp1).take(2).collect();
-            let renewal_from_p2: Vec<Share> = sharks.proactive_dealer(sp2).take(2).collect();
+            let renewal_from_p1: Vec<Share> = sharks.make_proactive_shares(sp1).take(2).collect();
+            let renewal_from_p2: Vec<Share> = sharks.make_proactive_shares(sp2).take(2).collect();
 
             sp1.renew([&renewal_from_p1[0], &renewal_from_p2[0]]).unwrap();
             sp2.renew([&renewal_from_p2[1], &renewal_from_p1[1]]).unwrap();
@@ -366,8 +412,8 @@ mod tests {
         let sp1 = &mut shares_p1[0];
         let sp2 = &mut shares_p2[0];
 
-        let renewal_from_p1: Vec<Share> = sharks.proactive_dealer(sp1).take(2).collect();
-        let renewal_from_p2: Vec<Share> = sharks.proactive_dealer(sp2).take(2).collect();
+        let renewal_from_p1: Vec<Share> = sharks.make_proactive_shares(sp1).take(2).collect();
+        let renewal_from_p2: Vec<Share> = sharks.make_proactive_shares(sp2).take(2).collect();
 
         sp1.renew([&renewal_from_p1[0], &renewal_from_p2[0]]).unwrap();
         sp2.renew([&renewal_from_p2[1], &renewal_from_p1[1]]).unwrap();
@@ -381,25 +427,21 @@ mod tests {
     fn test_proactive_renewal_changes_shares() {
         let sharks = Sharks(2);
         let secret = b"changes";
-        let mut shares: Vec<Share> = sharks.make_shares(secret).take(2).collect();
-        let original_y_p1 = shares[0].y.clone();
-        let original_y_p2 = shares[1].y.clone();
+        // Use 3 players so the test works with both deterministic (no_std) and random (std) RNG.
+        // With a fixed seed and 2 players, identical polynomials cause XOR cancellation (no-op).
+        let mut shares: Vec<Share> = sharks.make_shares(secret).take(3).collect();
+        let original_ys: Vec<_> = shares.iter().map(|s| s.y.clone()).collect();
 
-        let (shares_p1, shares_p2) = shares.split_at_mut(1);
-        let sp1 = &mut shares_p1[0];
-        let sp2 = &mut shares_p2[0];
+        let renewals: Vec<Vec<Share>> = shares
+            .iter()
+            .map(|s| sharks.make_proactive_shares(s).take(3).collect())
+            .collect();
 
-        let renewal_from_p1: Vec<Share> = sharks.proactive_dealer(sp1).take(2).collect();
-        let renewal_from_p2: Vec<Share> = sharks.proactive_dealer(sp2).take(2).collect();
+        Sharks::renew_all_shares_for_all_players(&mut shares, renewals);
 
-        sp1.renew([&renewal_from_p1[0], &renewal_from_p2[0]]).unwrap();
-        sp2.renew([&renewal_from_p2[1], &renewal_from_p1[1]]).unwrap();
-
-        // The share values should have changed after renewal
-        // (extremely unlikely to remain the same with random polynomials)
-        let changed_p1 = sp1.y != original_y_p1;
-        let changed_p2 = sp2.y != original_y_p2;
-        assert!(changed_p1 || changed_p2);
+        // At least one share's y values should have changed after renewal
+        let any_changed = shares.iter().zip(original_ys.iter()).any(|(s, orig)| s.y != *orig);
+        assert!(any_changed);
     }
 
     #[cfg(feature = "proactive")]
@@ -416,7 +458,7 @@ mod tests {
         // Renew all shares using the full protocol
         let renewals: Vec<Vec<Share>> = shares
             .iter()
-            .map(|s| sharks.proactive_dealer(s).take(3).collect())
+            .map(|s| sharks.make_proactive_shares(s).take(3).collect())
             .collect();
 
         Sharks::renew_all_shares_for_all_players(&mut shares, renewals);
@@ -442,7 +484,7 @@ mod tests {
 
         let renewals: Vec<Vec<Share>> = shares
             .iter()
-            .map(|s| sharks.proactive_dealer(s).take(3).collect())
+            .map(|s| sharks.make_proactive_shares(s).take(3).collect())
             .collect();
 
         Sharks::renew_all_shares_for_all_players(&mut shares, renewals);
@@ -463,7 +505,7 @@ mod tests {
 
         let renewals: Vec<Vec<Share>> = shares
             .iter()
-            .map(|s| sharks.proactive_dealer(s).take(num_players as usize).collect())
+            .map(|s| sharks.make_proactive_shares(s).take(num_players as usize).collect())
             .collect();
 
         Sharks::renew_all_shares_for_all_players(&mut shares, renewals);

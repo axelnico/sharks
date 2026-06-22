@@ -21,7 +21,7 @@ default = ["std", "zeroize_memory"]
 std = ["rand/std", "rand/std_rng"]
 fuzzing = ["std", "arbitrary", "proactive"]
 zeroize_memory = ["zeroize"]
-proactive = ["std"]
+proactive = ["zeroize_memory"]
 
 [dependencies]
 rand = { version = "0.8", default-features = false }
