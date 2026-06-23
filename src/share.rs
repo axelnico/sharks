@@ -1,5 +1,4 @@
 use alloc::vec::Vec;
-
 use super::field::GF256;
 
 #[cfg(feature = "fuzzing")]
@@ -39,6 +38,66 @@ use zeroize::Zeroize;
 pub struct Share {
     pub x: GF256,
     pub y: Vec<GF256>,
+}
+
+impl Share {
+
+    /// Renews a specific share based on the protocol proposed by Herzberg et al. in their 1995 paper,
+    /// "Proactive Secret Sharing Or: How to Cope With Perpetual Leakage."
+    /// Example:
+    /// ```
+    /// # use sharks::{ Sharks, Share };
+    /// # use rand_chacha::rand_core::SeedableRng;
+    /// # let sharks = Sharks(2);
+    /// // Obtain an iterator over the shares for secret "a_secret"
+    /// let mut rng = rand_chacha::ChaCha8Rng::from_seed([0x90; 32]);
+    /// let dealer = sharks.dealer_rng(b"a_secret", &mut rng);
+    /// // Get 2 shares
+    /// let mut shares: Vec<Share> = dealer.take(2).collect();
+    /// let (shares_player1, shares_player2) = shares.split_at_mut(1);
+    /// let share_player1 = &mut shares_player1[0];
+    /// let share_player2 = &mut shares_player2[0];
+    /// let mut rng = rand_chacha::ChaCha8Rng::from_seed([0x90; 32]);
+    /// let proactive_player1 = sharks.proactive_dealer_rng(share_player1, &mut rng);
+    /// let renewal_shares_player1: Vec<Share> = proactive_player1.take(2).collect();
+    ///  // Usually at this step, player1 should send the corresponding renewal share
+    ///  // renewal_shares_player1[1] to player 2
+    /// let mut rng = rand_chacha::ChaCha8Rng::from_seed([0x91; 32]);
+    /// let proactive_player2 = sharks.proactive_dealer_rng(share_player2, &mut rng);
+    /// let renewal_shares_player2: Vec<Share> = proactive_player2.take(2).collect();
+    ///  // Usually at this step, player2 should send the corresponding renewal share
+    ///  // renewal_shares_player2[0] to player 1
+    /// let player1_renewal = share_player1.renew([&renewal_shares_player1[0],&renewal_shares_player2[0]]);
+    /// let player2_renewal = share_player2.renew([&renewal_shares_player2[1],&renewal_shares_player1[1]]);
+    ///  // Each player correctly updated its share with the corresponding information
+    /// assert!(player1_renewal.is_ok());
+    /// assert!(player2_renewal.is_ok());
+    /// 
+    /// let mut secret = sharks.recover(&shares);
+    /// // Secret is still correctly recovered
+    /// assert!(secret.is_ok());
+    /// assert_eq!(b"a_secret", secret.unwrap().as_slice());
+    #[cfg(feature = "proactive")]
+    pub fn renew<'a, T>(&mut self, renewal_shares: T) -> Result<(), &str>
+    where
+        T: IntoIterator<Item = &'a Share>,
+    {
+        let share_length = self.y.len();
+
+        for renewal_share in renewal_shares.into_iter() {
+            if renewal_share.y.len() != share_length {
+                return Err("All shares must have the same length");
+            }
+            else if renewal_share.x != self.x {
+                return Err("Invalid renewal share supplied");
+            } else {
+                for (y, other_y) in self.y.iter_mut().zip(renewal_share.y.iter()) {
+                    y.0 ^= other_y.0;
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Obtains a byte vector from a `Share` instance
@@ -88,5 +147,91 @@ mod tests {
         let share = Share::try_from(&bytes[..]).unwrap();
         assert_eq!(share.x, GF256(1));
         assert_eq!(share.y, vec![GF256(2), GF256(3)]);
+    }
+
+    #[cfg(feature = "proactive")]
+    #[test]
+    fn renew_works() {
+        let mut share = Share {
+            x: GF256(1),
+            y: vec![GF256(10), GF256(20)],
+        };
+        let original_y = share.y.clone();
+        let renewal = Share {
+            x: GF256(1),
+            y: vec![GF256(5), GF256(7)],
+        };
+        let result = share.renew([&renewal]);
+        assert!(result.is_ok());
+        // In GF256, addition is XOR: 10 ^ 5 = 15, 20 ^ 7 = 19
+        assert_eq!(share.y[0], GF256(original_y[0].0 ^ 5));
+        assert_eq!(share.y[1], GF256(original_y[1].0 ^ 7));
+    }
+
+    #[cfg(feature = "proactive")]
+    #[test]
+    fn renew_multiple_renewal_shares_works() {
+        let mut share = Share {
+            x: GF256(3),
+            y: vec![GF256(100)],
+        };
+        let renewal1 = Share {
+            x: GF256(3),
+            y: vec![GF256(25)],
+        };
+        let renewal2 = Share {
+            x: GF256(3),
+            y: vec![GF256(50)],
+        };
+        let result = share.renew([&renewal1, &renewal2]);
+        assert!(result.is_ok());
+        // GF256 addition is XOR: 100 ^ 25 ^ 50
+        assert_eq!(share.y[0], GF256(100 ^ 25 ^ 50));
+    }
+
+    #[cfg(feature = "proactive")]
+    #[test]
+    fn renew_mismatched_length_err() {
+        let mut share = Share {
+            x: GF256(1),
+            y: vec![GF256(10), GF256(20)],
+        };
+        let renewal = Share {
+            x: GF256(1),
+            y: vec![GF256(5)],
+        };
+        let result = share.renew([&renewal]);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "All shares must have the same length");
+    }
+
+    #[cfg(feature = "proactive")]
+    #[test]
+    fn renew_mismatched_x_err() {
+        let mut share = Share {
+            x: GF256(1),
+            y: vec![GF256(10), GF256(20)],
+        };
+        let renewal = Share {
+            x: GF256(2),
+            y: vec![GF256(5), GF256(7)],
+        };
+        let result = share.renew([&renewal]);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Invalid renewal share supplied");
+    }
+
+    #[cfg(feature = "proactive")]
+    #[test]
+    fn renew_empty_renewal_shares_is_noop() {
+        let mut share = Share {
+            x: GF256(1),
+            y: vec![GF256(10), GF256(20)],
+        };
+        let original_y = share.y.clone();
+        let empty: Vec<&Share> = vec![];
+        let result = share.renew(empty);
+        assert!(result.is_ok());
+        assert_eq!(share.y, original_y);
     }
 }

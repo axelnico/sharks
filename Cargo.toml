@@ -19,8 +19,9 @@ codecov = { repository = "c0dearm/sharks" }
 [features]
 default = ["std", "zeroize_memory"]
 std = ["rand/std", "rand/std_rng"]
-fuzzing = ["std", "arbitrary"]
+fuzzing = ["std", "arbitrary", "proactive"]
 zeroize_memory = ["zeroize"]
+proactive = ["zeroize_memory"]
 
 [dependencies]
 rand = { version = "0.8", default-features = false }
