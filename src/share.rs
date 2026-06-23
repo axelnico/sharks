@@ -55,8 +55,8 @@ impl Share {
     /// // Get 2 shares
     /// let mut shares: Vec<Share> = dealer.take(2).collect();
     /// let (shares_player1, shares_player2) = shares.split_at_mut(1);
-    /// let share_player1 = & mut shares_player1[0];
-    /// let share_player2 = & mut shares_player2[0];
+    /// let share_player1 = &mut shares_player1[0];
+    /// let share_player2 = &mut shares_player2[0];
     /// let mut rng = rand_chacha::ChaCha8Rng::from_seed([0x90; 32]);
     /// let proactive_player1 = sharks.proactive_dealer_rng(share_player1, &mut rng);
     /// let renewal_shares_player1: Vec<Share> = proactive_player1.take(2).collect();
@@ -78,7 +78,7 @@ impl Share {
     /// assert!(secret.is_ok());
     /// assert_eq!(b"a_secret", secret.unwrap().as_slice());
     #[cfg(feature = "proactive")]
-    pub fn renew<'a, T>(& mut self, renewal_shares: T) -> Result<(), &str>
+    pub fn renew<'a, T>(&mut self, renewal_shares: T) -> Result<(), &str>
     where
         T: IntoIterator<Item = &'a Share>,
     {
